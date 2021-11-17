@@ -768,7 +768,7 @@ namespace ExcelTool
                 }
                 else
                 {
-                    tempPath = Path.Combine(Path.GetDirectoryName(path), pathName + "_1" + suffix);
+                    tempPath = Path.Combine(Path.GetDirectoryName(path), pathName + "_1");
                     return GetPath(tempPath, suffix);
                 }
             }
