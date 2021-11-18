@@ -35,6 +35,20 @@ namespace ExcelTool
         }
     }
 
+    public struct TypeData
+    {
+        public EAnalysisType typeSign;
+        public Type[] types;
+    }
+
+    public enum EAnalysisType
+    {
+        Basic = 0,
+        Dict = 1,
+        List = 2,
+        Array
+    }
+
 
     class ExcelUtility
     {
@@ -52,6 +66,7 @@ namespace ExcelTool
         };
 
         private static Dictionary<string, Type> mNameToType = new Dictionary<string, Type>();
+        private static Dictionary<Type, string> mTypeToName = new Dictionary<Type, string>();
 
         static int Round(float val) { return Mathf.RoundToInt(val); }
 
@@ -82,6 +97,39 @@ namespace ExcelTool
                 mNameToType[name] = type;
             }
             return type;
+        }
+
+        /// <summary>
+        /// 类型获取名称
+        /// </summary>
+        public static string TypeToName(Type type)
+        {
+            if (type == null)
+            {
+                Log.Write(Level.ERROR, string.Format("类型为Null"));
+                return null;
+            }
+            string name;
+            if (!mTypeToName.TryGetValue(type, out name) || name == null)
+            {
+                if (type == typeof(string)) name = "string";
+                else if (type == typeof(byte)) name = "byte";
+                else if (type == typeof(Int16)) name = "short";
+                else if (type == typeof(Int32)) name = "int";
+                else if (type == typeof(float)) name = "float";
+                else if (type == typeof(double)) name = "double";
+                else if (type == typeof(Int64)) name = "long";
+                else if (type == typeof(UInt16)) name = "ushort";
+                else if (type == typeof(UInt32)) name = "uint";
+                else if (type == typeof(UInt64)) name = "ulong";
+                else if (type == typeof(Vector2)) name = "Vector2";
+                else if (type == typeof(Vector3)) name = "Vector3";
+                else if (type.IsArray)
+                {
+                    name = TypeToName(type.GetElementType()) + "[]";
+                }
+            }
+            return name;
         }
 
         /// <summary>
@@ -226,11 +274,11 @@ namespace ExcelTool
         /// <summary>
         /// 读取Excel
         /// </summary>
-        public static DataSet ReadExcel(string excelFile)
+        public static DataSet ReadExcel(string excelFile, out FileStream mStream)
         {
             try
             {
-                FileStream mStream = File.Open(excelFile, FileMode.Open, FileAccess.Read);
+                mStream = File.Open(excelFile, FileMode.Open, FileAccess.Read);
                 IExcelDataReader mExcelReader = ExcelReaderFactory.CreateOpenXmlReader(mStream);
                 return mExcelReader.AsDataSet();
             }
@@ -244,11 +292,11 @@ namespace ExcelTool
         /// <summary>
         /// 序列化Excel
         /// </summary>
-        public static List<string> SerializeExcelToJson(DataSet dataSet)
+        public static Dictionary<string, string> SerializeExcelToJson(DataSet dataSet, string className)
         {
             if (dataSet.Tables.Count < 1)
                 return null;
-            List<string> data = new List<string>();
+            Dictionary<string, string> data = new Dictionary<string, string>();
             for (int i = 0; i < dataSet.Tables.Count; i++)
             {
                 DataTable tempTable = dataSet.Tables[i];
@@ -263,7 +311,8 @@ namespace ExcelTool
                 int rowIndex = 0;
                 bool isType = false;
                 Dictionary<int, Type[]> dictIndexType = new Dictionary<int, Type[]>();
-                Dictionary<int, int> dictAnalysisType = new Dictionary<int, int>();
+                Dictionary<int, EAnalysisType> dictAnalysisType = new Dictionary<int, EAnalysisType>();
+                Dictionary<string, TypeData> dictField = new Dictionary<string, TypeData>();
                 for (int j = 0; j < rowCount; j++)
                 {
                     //保存每一行的数据
@@ -281,7 +330,7 @@ namespace ExcelTool
                                     isType = true;
                                     rowIndex = j;
                                 }
-                                dictAnalysisType.Add(k, 0);
+                                dictAnalysisType.Add(k, EAnalysisType.Basic);
                                 dictIndexType.Add(k, new[] { NameToType(tempfield) });
                             }
 
@@ -301,7 +350,7 @@ namespace ExcelTool
                                         isType = true;
                                         rowIndex = j;
                                     }
-                                    dictAnalysisType.Add(k, 1);
+                                    dictAnalysisType.Add(k, EAnalysisType.Dict);
                                     dictIndexType.Add(k, new[] { NameToType(key), NameToType(val) });
                                 }
                                 else
@@ -322,7 +371,7 @@ namespace ExcelTool
                                         isType = true;
                                         rowIndex = j;
                                     }
-                                    dictAnalysisType.Add(k, 2);
+                                    dictAnalysisType.Add(k, EAnalysisType.List);
                                     dictIndexType.Add(k, new[] { NameToType(type) });
                                 }
                                 else
@@ -342,7 +391,7 @@ namespace ExcelTool
                                         isType = true;
                                         rowIndex = j;
                                     }
-                                    dictAnalysisType.Add(k, 2);
+                                    dictAnalysisType.Add(k, EAnalysisType.Array);
                                     dictIndexType.Add(k, new[] { NameToType(type) });
                                 }
                                 else
@@ -350,6 +399,24 @@ namespace ExcelTool
                                     Log.Write(Level.ERROR, string.Format("{0}List类型错误", tempfield));
                                 }
                             }
+
+                            if (j == rowIndex && dictIndexType.ContainsKey(k))
+                            {
+                                var field = tempTable.Rows[rowIndex + 1][k].ToString();
+
+                                if (!dictField.ContainsKey(field))
+                                {
+                                    TypeData typeData = new TypeData();
+                                    typeData.types = dictIndexType[k];
+                                    typeData.typeSign = dictAnalysisType[k];
+                                    dictField.Add(field, typeData);
+                                }
+                                else
+                                {
+                                    Log.Write(Level.ERROR, string.Format("数据类中包含相同的字段{0}", field));
+                                }
+                            }
+
 
                             if (isType && j > rowIndex + 1 && dictIndexType.ContainsKey(k))
                             {
@@ -365,7 +432,7 @@ namespace ExcelTool
                                     //Key-Value对应
                                     row[field] = value;
                                 }
-                                else if (dictAnalysisType[k] == 1)
+                                else if (dictAnalysisType[k] == EAnalysisType.Dict)
                                 {
                                     Regex r = new Regex(@"\(.*?\)");
                                     var ms = r.Matches(tempTable.Rows[j][k].ToString());
@@ -403,7 +470,7 @@ namespace ExcelTool
                                     //Key-Value对应
                                     row[field] = tempDict;
                                 }
-                                else if (dictAnalysisType[k] == 2)
+                                else if (dictAnalysisType[k] == EAnalysisType.List || dictAnalysisType[k] == EAnalysisType.Array)
                                 {
                                     string dataStr = tempTable.Rows[j][k].ToString();
                                     if (dataStr.StartsWith("[") && dataStr.EndsWith("]"))
@@ -451,7 +518,7 @@ namespace ExcelTool
                         table.Add(row);
                 }
                 string json = JsonConvert.SerializeObject(table, Newtonsoft.Json.Formatting.Indented);
-                data.Add(json);
+                data.Add(CSharpUtility.CreateData(className, dictField), json);
             }
             return data;
         }
@@ -459,11 +526,11 @@ namespace ExcelTool
         /// <summary>
         /// 序列化Excel
         /// </summary>
-        public static List<StringBuilder> SerializeExcelToCSV(DataSet dataSet)
+        public static Dictionary<string, StringBuilder> SerializeExcelToCSV(DataSet dataSet, string className)
         {
             if (dataSet.Tables.Count < 1)
                 return null;
-            List<StringBuilder> data = new List<StringBuilder>();
+            Dictionary<string, StringBuilder> data = new Dictionary<string, StringBuilder>();
             for (int i = 0; i < dataSet.Tables.Count; i++)
             {
                 DataTable tempTable = dataSet.Tables[i];
@@ -476,7 +543,8 @@ namespace ExcelTool
                 int rowIndex = 0;
                 bool isType = false;
                 Dictionary<int, Type[]> dictIndexType = new Dictionary<int, Type[]>();
-                Dictionary<int, int> dictAnalysisType = new Dictionary<int, int>();
+                Dictionary<int, EAnalysisType> dictAnalysisType = new Dictionary<int, EAnalysisType>();
+                Dictionary<string, TypeData> dictField = new Dictionary<string, TypeData>();
                 //保存每一行的数据
                 StringBuilder stringBuilder = new StringBuilder();
                 for (int j = 0; j < rowCount; j++)
@@ -515,7 +583,7 @@ namespace ExcelTool
                                         isType = true;
                                         rowIndex = j;
                                     }
-                                    dictAnalysisType.Add(k, 1);
+                                    dictAnalysisType.Add(k, EAnalysisType.Dict);
                                     dictIndexType.Add(k, new[] { NameToType(key), NameToType(val) });
                                 }
                                 else
@@ -536,7 +604,7 @@ namespace ExcelTool
                                         isType = true;
                                         rowIndex = j;
                                     }
-                                    dictAnalysisType.Add(k, 2);
+                                    dictAnalysisType.Add(k, EAnalysisType.List);
                                     dictIndexType.Add(k, new[] { NameToType(type) });
                                 }
                                 else
@@ -556,7 +624,7 @@ namespace ExcelTool
                                         isType = true;
                                         rowIndex = j;
                                     }
-                                    dictAnalysisType.Add(k, 2);
+                                    dictAnalysisType.Add(k, EAnalysisType.Array);
                                     dictIndexType.Add(k, new[] { NameToType(type) });
                                 }
                                 else
@@ -570,6 +638,10 @@ namespace ExcelTool
                                 var field = tempTable.Rows[rowIndex + 1][k].ToString();
                                 stringBuilder.Append(field + ",");
                                 isNull = false;
+                                TypeData typeData = new TypeData();
+                                typeData.types = dictIndexType[k];
+                                typeData.typeSign = dictAnalysisType[k];
+                                dictField.Add(field, typeData);
                             }
 
                             if (isType && j > rowIndex + 1 && dictIndexType.ContainsKey(k))
@@ -585,7 +657,7 @@ namespace ExcelTool
                                     }
                                     stringBuilder.Append(tempTable.Rows[j][k] + ",");
                                 }
-                                else if (dictAnalysisType[k] == 1)
+                                else if (dictAnalysisType[k] == EAnalysisType.Dict)
                                 {
                                     Regex r = new Regex(@"\(.*?\)");
                                     var ms = r.Matches(tempTable.Rows[j][k].ToString());
@@ -622,7 +694,7 @@ namespace ExcelTool
                                     }
                                     stringBuilder.Append(JsonConvert.SerializeObject(tempDict) + ",");
                                 }
-                                else if (dictAnalysisType[k] == 2)
+                                else if (dictAnalysisType[k] == EAnalysisType.Array || dictAnalysisType[k] == EAnalysisType.List)
                                 {
                                     string dataStr = tempTable.Rows[j][k].ToString();
                                     if (dataStr.StartsWith("[") && dataStr.EndsWith("]"))
@@ -667,7 +739,7 @@ namespace ExcelTool
                     if (!isNull)
                         stringBuilder.Append("\r\n");
                 }
-                data.Add(stringBuilder);
+                data.Add(CSharpUtility.CreateData(className, dictField), stringBuilder);
             }
             return data;
         }
@@ -675,28 +747,24 @@ namespace ExcelTool
         /// <summary>
         /// 转换为Json
         /// </summary>
-        public static void ConvertToJson(string excelFile, string jsonPath = null, Encoding encoding = null)
+        public static void ConvertToJson(string excelFile, Encoding encoding = null)
         {
-            var dataSet = ReadExcel(excelFile);
-            var data = SerializeExcelToJson(dataSet);
+            FileStream mStream;
+            var dataSet = ReadExcel(excelFile, out mStream);
+            var data = SerializeExcelToJson(dataSet, Path.GetFileNameWithoutExtension(excelFile));
 
             if (encoding == null) encoding = Encoding.UTF8;
             if (data != null)
             {
-                for (int i = 0; i < data.Count; i++)
+                foreach (var item in data)
                 {
-                    string path = jsonPath;
-                    if (string.IsNullOrEmpty(jsonPath))
-                    {
-#if UNITY_STANDALONE_WIN
-                        path = GetPath(Path.Combine(Application.dataPath, Path.GetFileNameWithoutExtension(excelFile)), ".json");
-#else
-                        path = GetPath(Path.Combine(System.Windows.Forms.Application.StartupPath, Path.GetFileNameWithoutExtension(excelFile)), ".json");
-#endif
-                    }
-                    WriterData(path, data[i], encoding);
+                    string pathJson = GetPath(Path.Combine(System.Windows.Forms.Application.StartupPath, Path.GetFileNameWithoutExtension(excelFile)), ".json");
+                    string pathCs = GetPath(Path.Combine(System.Windows.Forms.Application.StartupPath, Path.GetFileNameWithoutExtension(excelFile)), ".cs");
+                    WriterData(pathCs, item.Key, encoding);
+                    WriterData(pathJson, item.Value, encoding);
                 }
             }
+            mStream.Close();
         }
 
         /// <summary>
@@ -710,30 +778,24 @@ namespace ExcelTool
         /// <summary>
         /// 转换为CSV
         /// </summary>
-        public static void ConvertToCSV(string excelFile, string csvPath = null, Encoding encoding = null)
+        public static void ConvertToCSV(string excelFile, Encoding encoding = null)
         {
-            var dataSet = ReadExcel(excelFile);
-            var data = SerializeExcelToCSV(dataSet);
+            FileStream mStream;
+            var dataSet = ReadExcel(excelFile, out mStream);
+            var data = SerializeExcelToCSV(dataSet, Path.GetFileNameWithoutExtension(excelFile));
 
             if (encoding == null) encoding = Encoding.UTF8;
             if (data != null)
             {
-                for (int i = 0; i < data.Count; i++)
+                foreach (var item in data)
                 {
-                    string path = csvPath;
-                    if (string.IsNullOrEmpty(csvPath))
-                    {
-#if UNITY_STANDALONE_WIN
-                        path = GetPath(Path.Combine(Application.dataPath, Path.GetFileNameWithoutExtension(excelFile)), ".csv");
-                        Debug.Log(path);
-#else
-                        path = GetPath(Path.Combine(System.Windows.Forms.Application.StartupPath, Path.GetFileNameWithoutExtension(excelFile)), ".csv");
-                        //Debug.Log(path);
-#endif
-                    }
-                    WriterData(path, data[i].ToString(), encoding);
+                    string pathCSV = GetPath(Path.Combine(System.Windows.Forms.Application.StartupPath, Path.GetFileNameWithoutExtension(excelFile)), ".csv");
+                    string pathCS = GetPath(Path.Combine(System.Windows.Forms.Application.StartupPath, Path.GetFileNameWithoutExtension(excelFile)), ".cs");
+                    WriterData(pathCS, item.Key, encoding);
+                    WriterData(pathCSV, item.Value.ToString(), encoding);
                 }
             }
+            mStream.Close();
         }
 
         /// <summary>

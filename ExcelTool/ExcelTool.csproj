@@ -59,6 +59,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CSharpUtility.cs" />
     <Compile Include="ExcelUtility.cs" />
     <Compile Include="Log.cs" />
     <Compile Include="Main.cs">
