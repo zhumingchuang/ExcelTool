@@ -655,7 +655,7 @@ namespace ExcelTool
                                         Log.Write(Level.ERROR, string.Format("{0}是: {1}类型不等于标记类型{2}", tempTable.Rows[j][k], tempTable.Rows[j][k].GetType(), dictIndexType[k][0]));
                                         return null;
                                     }
-                                    stringBuilder.Append(tempTable.Rows[j][k] + ",");
+                                    stringBuilder.Append(tempTable.Rows[j][k].ToString().Replace(",","|") + ",");
                                 }
                                 else if (dictAnalysisType[k] == EAnalysisType.Dict)
                                 {
@@ -692,7 +692,7 @@ namespace ExcelTool
                                             }
                                         }
                                     }
-                                    stringBuilder.Append(JsonConvert.SerializeObject(tempDict) + ",");
+                                    stringBuilder.Append(JsonConvert.SerializeObject(tempDict).Replace(",","|") + ",");
                                 }
                                 else if (dictAnalysisType[k] == EAnalysisType.Array || dictAnalysisType[k] == EAnalysisType.List)
                                 {
@@ -714,12 +714,12 @@ namespace ExcelTool
                                                 Log.Write(Level.ERROR, string.Format("数组成员{0}无法解析为{1}", item.Value, dictIndexType[k][0]));
                                             }
                                         }
-                                        stringBuilder.Append(JsonConvert.SerializeObject(dataList) + ",");
+                                        stringBuilder.Append(JsonConvert.SerializeObject(dataList).Replace(",","|") + ",");
                                     }
                                     else
                                     {
                                         var itemData = dataStr.ToString().Split(',');
-                                        List<string> listData = new List<string>();
+                                        List<object> listData = new List<object>();
                                         foreach (var item in itemData)
                                         {
                                             var val = CastValue(item, dictIndexType[k][0]);
@@ -728,9 +728,9 @@ namespace ExcelTool
                                                 Log.Write(Level.ERROR, string.Format("List{0}中数据{1}不等于标记类型{2}", tempTable.Rows[j][k], item, dictIndexType[k][0]));
                                                 return null;
                                             }
-                                            listData.Add(val.ToString());
+                                            listData.Add(val);
                                         }
-                                        stringBuilder.Append(JsonConvert.SerializeObject(listData) + ",");
+                                        stringBuilder.Append(JsonConvert.SerializeObject(listData).Replace(",","|") + ",");
                                     }
                                 }
                             }
